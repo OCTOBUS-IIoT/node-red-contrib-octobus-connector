@@ -1,0 +1,802 @@
+<script type="text/javascript">
+  const dataTypeOptions = [
+    { value: 'integer', text: 'Integer' },
+    { value: 'decimal', text: 'Decimal' },
+    { value: 'boolean', text: 'Boolean' },
+    { value: 'string', text: 'String' },
+    { value: 'geolocation', text: 'Geolocation' },
+  ];
+  const dataValidation = {
+    deviceId: /^.+$/,
+    assetId: /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/,
+    propertyId: /^.+$/,
+    measurementId: /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/,
+    dataType: /^integer|decimal|boolean|string|geolocation$/,
+  };
+
+  RED.nodes.registerType('octobus-json-extractor', {
+    category: 'Octobus',
+    color: '#C3B3C5',
+    defaults: {
+      name: { value: 'JSON Extractor' },
+      assets: { value: [{ deviceId: '', assetId: '' }], validate: validateList, },
+      measurements: { value: [{ propertyId: '', measurementId: '', dataType: '' }], validate: validateList, },
+      useTimestamp: { value: false },
+      timestampId: { value: "" },
+      timezone: { value: "Asia/Bangkok" },
+    },
+    inputs: 1,
+    outputs: 1,
+    icon: 'octobus_256.png',
+    label: function () {
+      return this.name || "JSON Extractor";
+    },
+    oneditprepare: function () {
+      $('#assetMapList').editableList({
+        addButton: 'Add Asset',
+        addItem: function (row, index, data) {
+          // prettier-ignore
+          $(row).html(`
+            <div class="item-container">
+              <input name="deviceId" type="text" placeholder="e.g. O-4711" class="input-device-id" value="${data.deviceId || ''}" pattern="${dataValidation.deviceId.source}" required />
+              <i class="icon-link fa fa-link" aria-hidden="true"></i>
+              <input name="assetId" type="text" placeholder="e.g. f32511e8-181a-4ebd-b051-c0af1f297e0c" class="input-asset-id" value="${data.assetId || ''}" pattern="${dataValidation.assetId.source}" required />
+            </div>
+          `);
+        },
+        removable: true,
+        sortable: true,
+      });
+
+      $('#measurementMapList').editableList({
+        addButton: 'Add Measurement',
+        addItem: function (row, index, data) {
+          // prettier-ignore
+          $(row).html(`
+            <div class="item-container">
+              <input name="propertyId" type="text" placeholder="e.g. sales.0.firstName" class="input-property-id" value="${data.propertyId || ''}" pattern="${dataValidation.propertyId.source}" required />
+              <i class="icon-link fa fa-link" aria-hidden="true"></i>
+              <input name="measurementId" type="text" placeholder="e.g. f32511e8-181a-4ebd-b051-c0af1f297e0c" class="input-measurement-id" value="${data.measurementId || ''}" pattern="${dataValidation.measurementId.source}" required />
+              <select name="dataType" class="select-data-type" pattern="${dataValidation.dataType.source}" required>
+                ${dataTypeOptions.map((opt) => `<option value="${opt.value}" ${opt.value === data.dataType ? "selected" : ""}>${opt.text}</option>`)}
+              </select>
+            </div>
+          `);
+        },
+        removable: true,
+        sortable: true,
+      });
+
+      this.assets?.forEach((assetMap) => $('#assetMapList').editableList('addItem', assetMap));
+      this.measurements?.forEach((measurementMap) => $('#measurementMapList').editableList('addItem', measurementMap));
+
+      try {
+        var isUseTimestamp = $('#node-input-useTimestamp');
+        var inputTimestamp = $('#node-input-timestampId');
+        var selectorTimezone = $('#node-timeswitch-timezone-row');
+        isShowTimestampInput(); // initialize
+        isUseTimestamp.change(isShowTimestampInput);
+      } catch (err) {
+        node.error(err);
+      }
+      function isShowTimestampInput() {
+        if (isUseTimestamp.is(':checked')) {
+          inputTimestamp.show();
+          selectorTimezone.show();
+        }
+        else {
+          inputTimestamp.hide();
+          selectorTimezone.hide();
+        }
+      }
+    },
+    oneditsave: function () {
+      const assets = [];
+      const assetMapList = $('#assetMapList').editableList('items');
+      assetMapList.each(function (index, item) {
+        const deviceId = $(item).find('input[name="deviceId"]').val();
+        const assetId = $(item).find('input[name="assetId"]').val();
+        assets.push({ deviceId, assetId });
+      });
+
+      const measurements = [];
+      const measurementMapList = $('#measurementMapList').editableList('items');
+      measurementMapList.each(function (index, item) {
+        const propertyId = $(item).find('input[name="propertyId"]').val();
+        const measurementId = $(item).find('input[name="measurementId"]').val();
+        const dataType = $(item).find('select[name="dataType"]').val();
+        measurements.push({ propertyId, measurementId, dataType });
+      });
+
+      this.assets = assets;
+      this.measurements = measurements;
+
+      this.editor?.destroy();
+      delete this.editor;
+    },
+    oneditcancel: function () {
+      this.editor?.destroy();
+      delete this.editor;
+    },
+  });
+
+  function validateList(items) {
+    for (item of items) {
+      if (!Object.keys(item).every((key) => dataValidation[key].test(item[key]))) {
+        return false;
+      }
+    }
+    return true;
+  }
+</script>
+
+<script type="text/html" data-template-name="octobus-json-extractor">
+  <style>
+    .red-ui-editableList-list > li:last-child {
+      border-bottom: none;
+    }
+    .red-ui-editableList-addButton {
+      height: auto !important;
+      padding: 4px 12px !important;
+      font-size: 12px !important;
+    }
+    .item-container {
+      display: flex;
+      align-items: center;
+    }
+    .icon-link {
+      padding: 4px;
+      text-align: center;
+    }
+    .input-device-id {
+      width: 40% !important;
+    }
+    .input-asset-id {
+      flex: 1;
+    }
+    .input-property-id {
+      width: 30% !important;
+    }
+    .input-measurement-id {
+      flex: 1;
+    }
+    .select-data-type {
+      width: 30% !important;
+      max-width: 140px !important;
+      margin-left: 8px !important;
+    }
+  </style>
+  <div class="form-row">
+    <label for="node-input-name"><i class="fa fa-tag"></i>Name</label>
+    <input type="text" id="node-input-name" placeholder="Name">
+  </div>
+  <div>
+    <p>Device ID <i class="fa fa-link" aria-hidden="true"></i> Asset ID</p>
+    <ul id="assetMapList"></ul>
+  </div>
+
+  <div style="padding-top: 20px;">
+    <p>Property ID <i class="fa fa-link" aria-hidden="true"></i> Measurement ID</p>
+    <ul id="measurementMapList"></ul>
+  </div>
+
+  <div class="form-row" style="padding-top: 20px;">
+    <input type="checkbox" id="node-input-useTimestamp" style="width: auto; vertical-align: text-bottom;">
+    <label  for="node-input-useTimestamp" style="width: auto;">Use Timestamp from message</label>
+    <input type="text" id="node-input-timestampId" style="width: auto;" placeholder="message.timestamp">
+  </div>
+
+  <div style="padding-top: 10px;" class="form-row" id="node-timeswitch-timezone-row">
+    <label for="node-input-timezone">Timezone</label>
+    <select id="node-input-timezone">
+        <option>Africa/Abidjan</option>
+        <option>Africa/Accra</option>
+        <option>Africa/Addis_Ababa</option>
+        <option>Africa/Algiers</option>
+        <option>Africa/Asmara</option>
+        <option>Africa/Asmera</option>
+        <option>Africa/Bamako</option>
+        <option>Africa/Bangui</option>
+        <option>Africa/Banjul</option>
+        <option>Africa/Bissau</option>
+        <option>Africa/Blantyre</option>
+        <option>Africa/Brazzaville</option>
+        <option>Africa/Bujumbura</option>
+        <option>Africa/Cairo</option>
+        <option>Africa/Casablanca</option>
+        <option>Africa/Ceuta</option>
+        <option>Africa/Conakry</option>
+        <option>Africa/Dakar</option>
+        <option>Africa/Dar_Es_Salaam</option>
+        <option>Africa/Djibouti</option>
+        <option>Africa/Douala</option>
+        <option>Africa/El_Aaiun</option>
+        <option>Africa/Freetown</option>
+        <option>Africa/Gaborone</option>
+        <option>Africa/Harare</option>
+        <option>Africa/Johannesburg</option>
+        <option>Africa/Juba</option>
+        <option>Africa/Kampala</option>
+        <option>Africa/Khartoum</option>
+        <option>Africa/Kigali</option>
+        <option>Africa/Kinshasa</option>
+        <option>Africa/Lagos</option>
+        <option>Africa/Libreville</option>
+        <option>Africa/Lome</option>
+        <option>Africa/Luanda</option>
+        <option>Africa/Lubumbashi</option>
+        <option>Africa/Lusaka</option>
+        <option>Africa/Malabo</option>
+        <option>Africa/Maputo</option>
+        <option>Africa/Maseru</option>
+        <option>Africa/Mbabane</option>
+        <option>Africa/Mogadishu</option>
+        <option>Africa/Monrovia</option>
+        <option>Africa/Nairobi</option>
+        <option>Africa/Ndjamena</option>
+        <option>Africa/Niamey</option>
+        <option>Africa/Nouakchott</option>
+        <option>Africa/Ouagadougou</option>
+        <option>Africa/Porto-novo</option>
+        <option>Africa/Sao_Tome</option>
+        <option>Africa/Timbuktu</option>
+        <option>Africa/Tripoli</option>
+        <option>Africa/Tunis</option>
+        <option>Africa/Windhoek</option>
+        <option>America/Adak</option>
+        <option>America/Anchorage</option>
+        <option>America/Anguilla</option>
+        <option>America/Antigua</option>
+        <option>America/Araguaina</option>
+        <option>America/Argentina</option>
+        <option>America/Aruba</option>
+        <option>America/Asuncion</option>
+        <option>America/Atikokan</option>
+        <option>America/Atka</option>
+        <option>America/Bahia</option>
+        <option>America/Bahia_Banderas</option>
+        <option>America/Barbados</option>
+        <option>America/Belem</option>
+        <option>America/Belize</option>
+        <option>America/Blanc-sablon</option>
+        <option>America/Boa_Vista</option>
+        <option>America/Bogota</option>
+        <option>America/Boise</option>
+        <option>America/Buenos_Aires</option>
+        <option>America/Cambridge_Bay</option>
+        <option>America/Campo_Grande</option>
+        <option>America/Cancun</option>
+        <option>America/Caracas</option>
+        <option>America/Catamarca</option>
+        <option>America/Cayenne</option>
+        <option>America/Cayman</option>
+        <option>America/Chicago</option>
+        <option>America/Chihuahua</option>
+        <option>America/Coral_Harbour</option>
+        <option>America/Cordoba</option>
+        <option>America/Costa_Rica</option>
+        <option>America/Creston</option>
+        <option>America/Cuiaba</option>
+        <option>America/Curacao</option>
+        <option>America/Danmarkshavn</option>
+        <option>America/Dawson</option>
+        <option>America/Dawson_Creek</option>
+        <option>America/Denver</option>
+        <option>America/Detroit</option>
+        <option>America/Dominica</option>
+        <option>America/Edmonton</option>
+        <option>America/Eirunepe</option>
+        <option>America/El_Salvador</option>
+        <option>America/Ensenada</option>
+        <option>America/Fort_Nelson</option>
+        <option>America/Fort_Wayne</option>
+        <option>America/Fortaleza</option>
+        <option>America/Glace_Bay</option>
+        <option>America/Godthab</option>
+        <option>America/Goose_Bay</option>
+        <option>America/Grand_Turk</option>
+        <option>America/Grenada</option>
+        <option>America/Guadeloupe</option>
+        <option>America/Guatemala</option>
+        <option>America/Guayaquil</option>
+        <option>America/Guyana</option>
+        <option>America/Halifax</option>
+        <option>America/Havana</option>
+        <option>America/Hermosillo</option>
+        <option>America/Indiana</option>
+        <option>America/Indianapolis</option>
+        <option>America/Inuvik</option>
+        <option>America/Iqaluit</option>
+        <option>America/Jamaica</option>
+        <option>America/Jujuy</option>
+        <option>America/Juneau</option>
+        <option>America/Kentucky</option>
+        <option>America/Knox_In</option>
+        <option>America/Kralendijk</option>
+        <option>America/La_Paz</option>
+        <option>America/Lima</option>
+        <option>America/Los_Angeles</option>
+        <option>America/Louisville</option>
+        <option>America/Lower_Princes</option>
+        <option>America/Maceio</option>
+        <option>America/Managua</option>
+        <option>America/Manaus</option>
+        <option>America/Marigot</option>
+        <option>America/Martinique</option>
+        <option>America/Matamoros</option>
+        <option>America/Mazatlan</option>
+        <option>America/Mendoza</option>
+        <option>America/Menominee</option>
+        <option>America/Merida</option>
+        <option>America/Metlakatla</option>
+        <option>America/Mexico_City</option>
+        <option>America/Miquelon</option>
+        <option>America/Moncton</option>
+        <option>America/Monterrey</option>
+        <option>America/Montevideo</option>
+        <option>America/Montreal</option>
+        <option>America/Montserrat</option>
+        <option>America/Nassau</option>
+        <option>America/New_York</option>
+        <option>America/Nipigon</option>
+        <option>America/Nome</option>
+        <option>America/Noronha</option>
+        <option>America/North_Dakota</option>
+        <option>America/Nuuk</option>
+        <option>America/Ojinaga</option>
+        <option>America/Panama</option>
+        <option>America/Pangnirtung</option>
+        <option>America/Paramaribo</option>
+        <option>America/Phoenix</option>
+        <option>America/Port-au-prince</option>
+        <option>America/Port_Of_Spain</option>
+        <option>America/Porto_Acre</option>
+        <option>America/Porto_Velho</option>
+        <option>America/Puerto_Rico</option>
+        <option>America/Punta_Arenas</option>
+        <option>America/Rainy_River</option>
+        <option>America/Rankin_Inlet</option>
+        <option>America/Recife</option>
+        <option>America/Regina</option>
+        <option>America/Resolute</option>
+        <option>America/Rio_Branco</option>
+        <option>America/Rosario</option>
+        <option>America/Santa_Isabel</option>
+        <option>America/Santarem</option>
+        <option>America/Santiago</option>
+        <option>America/Santo_Domingo</option>
+        <option>America/Sao_Paulo</option>
+        <option>America/Scoresbysund</option>
+        <option>America/Shiprock</option>
+        <option>America/Sitka</option>
+        <option>America/St_Barthelemy</option>
+        <option>America/St_Johns</option>
+        <option>America/St_Kitts</option>
+        <option>America/St_Lucia</option>
+        <option>America/St_Thomas</option>
+        <option>America/St_Vincent</option>
+        <option>America/Swift_Current</option>
+        <option>America/Tegucigalpa</option>
+        <option>America/Thule</option>
+        <option>America/Thunder_Bay</option>
+        <option>America/Tijuana</option>
+        <option>America/Toronto</option>
+        <option>America/Tortola</option>
+        <option>America/Vancouver</option>
+        <option>America/Virgin</option>
+        <option>America/Whitehorse</option>
+        <option>America/Winnipeg</option>
+        <option>America/Yakutat</option>
+        <option>America/Yellowknife</option>
+        <option>Antarctica/Casey</option>
+        <option>Antarctica/Davis</option>
+        <option>Antarctica/Dumontdurville</option>
+        <option>Antarctica/Macquarie</option>
+        <option>Antarctica/Mawson</option>
+        <option>Antarctica/Mcmurdo</option>
+        <option>Antarctica/Palmer</option>
+        <option>Antarctica/Rothera</option>
+        <option>Antarctica/South_Pole</option>
+        <option>Antarctica/Syowa</option>
+        <option>Antarctica/Troll</option>
+        <option>Antarctica/Vostok</option>
+        <option>Arctic/Longyearbyen</option>
+        <option>Asia/Aden</option>
+        <option>Asia/Almaty</option>
+        <option>Asia/Amman</option>
+        <option>Asia/Anadyr</option>
+        <option>Asia/Aqtau</option>
+        <option>Asia/Aqtobe</option>
+        <option>Asia/Ashgabat</option>
+        <option>Asia/Ashkhabad</option>
+        <option>Asia/Atyrau</option>
+        <option>Asia/Baghdad</option>
+        <option>Asia/Bahrain</option>
+        <option>Asia/Baku</option>
+        <option>Asia/Bangkok</option>
+        <option>Asia/Barnaul</option>
+        <option>Asia/Beirut</option>
+        <option>Asia/Bishkek</option>
+        <option>Asia/Brunei</option>
+        <option>Asia/Calcutta</option>
+        <option>Asia/Chita</option>
+        <option>Asia/Choibalsan</option>
+        <option>Asia/Chongqing</option>
+        <option>Asia/Chungking</option>
+        <option>Asia/Colombo</option>
+        <option>Asia/Dacca</option>
+        <option>Asia/Damascus</option>
+        <option>Asia/Dhaka</option>
+        <option>Asia/Dili</option>
+        <option>Asia/Dubai</option>
+        <option>Asia/Dushanbe</option>
+        <option>Asia/Famagusta</option>
+        <option>Asia/Gaza</option>
+        <option>Asia/Harbin</option>
+        <option>Asia/Hebron</option>
+        <option>Asia/Ho_Chi_Minh</option>
+        <option>Asia/Hong_Kong</option>
+        <option>Asia/Hovd</option>
+        <option>Asia/Irkutsk</option>
+        <option>Asia/Istanbul</option>
+        <option>Asia/Jakarta</option>
+        <option>Asia/Jayapura</option>
+        <option>Asia/Jerusalem</option>
+        <option>Asia/Kabul</option>
+        <option>Asia/Kamchatka</option>
+        <option>Asia/Karachi</option>
+        <option>Asia/Kashgar</option>
+        <option>Asia/Kathmandu</option>
+        <option>Asia/Katmandu</option>
+        <option>Asia/Khandyga</option>
+        <option>Asia/Kolkata</option>
+        <option>Asia/Krasnoyarsk</option>
+        <option>Asia/Kuala_Lumpur</option>
+        <option>Asia/Kuching</option>
+        <option>Asia/Kuwait</option>
+        <option>Asia/Macao</option>
+        <option>Asia/Macau</option>
+        <option>Asia/Magadan</option>
+        <option>Asia/Makassar</option>
+        <option>Asia/Manila</option>
+        <option>Asia/Muscat</option>
+        <option>Asia/Nicosia</option>
+        <option>Asia/Novokuznetsk</option>
+        <option>Asia/Novosibirsk</option>
+        <option>Asia/Omsk</option>
+        <option>Asia/Oral</option>
+        <option>Asia/Phnom_Penh</option>
+        <option>Asia/Pontianak</option>
+        <option>Asia/Pyongyang</option>
+        <option>Asia/Qatar</option>
+        <option>Asia/Qostanay</option>
+        <option>Asia/Qyzylorda</option>
+        <option>Asia/Rangoon</option>
+        <option>Asia/Riyadh</option>
+        <option>Asia/Saigon</option>
+        <option>Asia/Sakhalin</option>
+        <option>Asia/Samarkand</option>
+        <option>Asia/Seoul</option>
+        <option>Asia/Shanghai</option>
+        <option>Asia/Singapore</option>
+        <option>Asia/Srednekolymsk</option>
+        <option>Asia/Taipei</option>
+        <option>Asia/Tashkent</option>
+        <option>Asia/Tbilisi</option>
+        <option>Asia/Tehran</option>
+        <option>Asia/Tel_Aviv</option>
+        <option>Asia/Thimbu</option>
+        <option>Asia/Thimphu</option>
+        <option>Asia/Tokyo</option>
+        <option>Asia/Tomsk</option>
+        <option>Asia/Ujung_Pandang</option>
+        <option>Asia/Ulaanbaatar</option>
+        <option>Asia/Ulan_Bator</option>
+        <option>Asia/Urumqi</option>
+        <option>Asia/Ust-nera</option>
+        <option>Asia/Vientiane</option>
+        <option>Asia/Vladivostok</option>
+        <option>Asia/Volgograd</option>
+        <option>Asia/Yakutsk</option>
+        <option>Asia/Yangon</option>
+        <option>Asia/Yekaterinburg</option>
+        <option>Asia/Yerevan</option>
+        <option>Atlantic/Azores</option>
+        <option>Atlantic/Bermuda</option>
+        <option>Atlantic/Canary</option>
+        <option>Atlantic/Cape_Verde</option>
+        <option>Atlantic/Faeroe</option>
+        <option>Atlantic/Faroe</option>
+        <option>Atlantic/Jan_Mayen</option>
+        <option>Atlantic/Madeira</option>
+        <option>Atlantic/Reykjavik</option>
+        <option>Atlantic/South_Georgia</option>
+        <option>Atlantic/St_Helena</option>
+        <option>Atlantic/Stanley</option>
+        <option>Australia/Act</option>
+        <option>Australia/Adelaide</option>
+        <option>Australia/Brisbane</option>
+        <option>Australia/Broken_Hill</option>
+        <option>Australia/Canberra</option>
+        <option>Australia/Currie</option>
+        <option>Australia/Darwin</option>
+        <option>Australia/Eucla</option>
+        <option>Australia/Hobart</option>
+        <option>Australia/Lhi</option>
+        <option>Australia/Lindeman</option>
+        <option>Australia/Lord_Howe</option>
+        <option>Australia/Melbourne</option>
+        <option>Australia/North</option>
+        <option>Australia/Nsw</option>
+        <option>Australia/Perth</option>
+        <option>Australia/Queensland</option>
+        <option>Australia/South</option>
+        <option>Australia/Sydney</option>
+        <option>Australia/Tasmania</option>
+        <option>Australia/Victoria</option>
+        <option>Australia/West</option>
+        <option>Australia/Yancowinna</option>
+        <option>Brazil/Acre</option>
+        <option>Brazil/Denoronha</option>
+        <option>Brazil/East</option>
+        <option>Brazil/West</option>
+        <option>Canada/Atlantic</option>
+        <option>Canada/Central</option>
+        <option>Canada/East-saskatchewan</option>
+        <option>Canada/Eastern</option>
+        <option>Canada/Mountain</option>
+        <option>Canada/Newfoundland</option>
+        <option>Canada/Pacific</option>
+        <option>Canada/Saskatchewan</option>
+        <option>Canada/Yukon</option>
+        <option>Chile/Continental</option>
+        <option>Chile/Easterisland</option>
+        <option>ETC/GMT+0.5</option>
+        <option>ETC/GMT+0</option>
+        <option>ETC/GMT+1.5</option>
+        <option>ETC/GMT+10.5</option>
+        <option>ETC/GMT+10</option>
+        <option>ETC/GMT+11.5</option>
+        <option>ETC/GMT+11</option>
+        <option>ETC/GMT+12.5</option>
+        <option>ETC/GMT+12</option>
+        <option>ETC/GMT+13.5</option>
+        <option>ETC/GMT+13</option>
+        <option>ETC/GMT+14</option>
+        <option>ETC/GMT+1</option>
+        <option>ETC/GMT+2.5</option>
+        <option>ETC/GMT+2</option>
+        <option>ETC/GMT+3.5</option>
+        <option>ETC/GMT+3</option>
+        <option>ETC/GMT+4.5</option>
+        <option>ETC/GMT+4</option>
+        <option>ETC/GMT+5.5</option>
+        <option>ETC/GMT+5</option>
+        <option>ETC/GMT+6.5</option>
+        <option>ETC/GMT+6</option>
+        <option>ETC/GMT+7.5</option>
+        <option>ETC/GMT+7</option>
+        <option>ETC/GMT+8.5</option>
+        <option>ETC/GMT+8</option>
+        <option>ETC/GMT+9.5</option>
+        <option>ETC/GMT+9</option>
+        <option>ETC/GMT-0.5</option>
+        <option>ETC/GMT-0</option>
+        <option>ETC/GMT-1.5</option>
+        <option>ETC/GMT-10.5</option>
+        <option>ETC/GMT-10</option>
+        <option>ETC/GMT-11.5</option>
+        <option>ETC/GMT-11</option>
+        <option>ETC/GMT-12.5</option>
+        <option>ETC/GMT-12</option>
+        <option>ETC/GMT-13.5</option>
+        <option>ETC/GMT-13</option>
+        <option>ETC/GMT-14</option>
+        <option>ETC/GMT-1</option>
+        <option>ETC/GMT-2.5</option>
+        <option>ETC/GMT-2</option>
+        <option>ETC/GMT-3.5</option>
+        <option>ETC/GMT-3</option>
+        <option>ETC/GMT-4.5</option>
+        <option>ETC/GMT-4</option>
+        <option>ETC/GMT-5.5</option>
+        <option>ETC/GMT-5</option>
+        <option>ETC/GMT-6.5</option>
+        <option>ETC/GMT-6</option>
+        <option>ETC/GMT-7.5</option>
+        <option>ETC/GMT-7</option>
+        <option>ETC/GMT-8.5</option>
+        <option>ETC/GMT-8</option>
+        <option>ETC/GMT-9.5</option>
+        <option>ETC/GMT-9</option>
+        <option>ETC/GMT0</option>
+        <option>ETC/GMT</option>
+        <option>ETC/Greenwich</option>
+        <option>ETC/Universal</option>
+        <option>ETC/Utc</option>
+        <option>ETC/Zulu</option>
+        <option>Europe/Amsterdam</option>
+        <option>Europe/Andorra</option>
+        <option>Europe/Astrakhan</option>
+        <option>Europe/Athens</option>
+        <option>Europe/Belfast</option>
+        <option>Europe/Belgrade</option>
+        <option>Europe/Berlin</option>
+        <option>Europe/Bratislava</option>
+        <option>Europe/Brussels</option>
+        <option>Europe/Bucharest</option>
+        <option>Europe/Budapest</option>
+        <option>Europe/Busingen</option>
+        <option>Europe/Chisinau</option>
+        <option>Europe/Copenhagen</option>
+        <option>Europe/Dublin</option>
+        <option>Europe/Gibraltar</option>
+        <option>Europe/Guernsey</option>
+        <option>Europe/Helsinki</option>
+        <option>Europe/Isle_Of_Man</option>
+        <option>Europe/Istanbul</option>
+        <option>Europe/Jersey</option>
+        <option>Europe/Kaliningrad</option>
+        <option>Europe/Kiev</option>
+        <option>Europe/Kirov</option>
+        <option>Europe/Lisbon</option>
+        <option>Europe/Ljubljana</option>
+        <option>Europe/London</option>
+        <option>Europe/Luxembourg</option>
+        <option>Europe/Madrid</option>
+        <option>Europe/Malta</option>
+        <option>Europe/Mariehamn</option>
+        <option>Europe/Minsk</option>
+        <option>Europe/Monaco</option>
+        <option>Europe/Moscow</option>
+        <option>Europe/Nicosia</option>
+        <option>Europe/Oslo</option>
+        <option>Europe/Paris</option>
+        <option>Europe/Podgorica</option>
+        <option>Europe/Prague</option>
+        <option>Europe/Riga</option>
+        <option>Europe/Rome</option>
+        <option>Europe/Samara</option>
+        <option>Europe/San_Marino</option>
+        <option>Europe/Sarajevo</option>
+        <option>Europe/Saratov</option>
+        <option>Europe/Simferopol</option>
+        <option>Europe/Skopje</option>
+        <option>Europe/Sofia</option>
+        <option>Europe/Stockholm</option>
+        <option>Europe/Tallinn</option>
+        <option>Europe/Tirane</option>
+        <option>Europe/Tiraspol</option>
+        <option>Europe/Ulyanovsk</option>
+        <option>Europe/Uzhgorod</option>
+        <option>Europe/Vaduz</option>
+        <option>Europe/Vatican</option>
+        <option>Europe/Vienna</option>
+        <option>Europe/Vilnius</option>
+        <option>Europe/Volgograd</option>
+        <option>Europe/Warsaw</option>
+        <option>Europe/Zagreb</option>
+        <option>Europe/Zaporozhye</option>
+        <option>Europe/Zurich</option>
+        <option>Indian/Antananarivo</option>
+        <option>Indian/Chagos</option>
+        <option>Indian/Christmas</option>
+        <option>Indian/Cocos</option>
+        <option>Indian/Comoro</option>
+        <option>Indian/Kerguelen</option>
+        <option>Indian/Mahe</option>
+        <option>Indian/Maldives</option>
+        <option>Indian/Mauritius</option>
+        <option>Indian/Mayotte</option>
+        <option>Indian/Reunion</option>
+        <option>Mexico/Bajanorte</option>
+        <option>Mexico/Bajasur</option>
+        <option>Mexico/General</option>
+        <option>Pacific/Apia</option>
+        <option>Pacific/Auckland</option>
+        <option>Pacific/Bougainville</option>
+        <option>Pacific/Chatham</option>
+        <option>Pacific/Chuuk</option>
+        <option>Pacific/Easter</option>
+        <option>Pacific/Efate</option>
+        <option>Pacific/Enderbury</option>
+        <option>Pacific/Fakaofo</option>
+        <option>Pacific/Fiji</option>
+        <option>Pacific/Funafuti</option>
+        <option>Pacific/Galapagos</option>
+        <option>Pacific/Gambier</option>
+        <option>Pacific/Guadalcanal</option>
+        <option>Pacific/Guam</option>
+        <option>Pacific/Honolulu</option>
+        <option>Pacific/Johnston</option>
+        <option>Pacific/Kiritimati</option>
+        <option>Pacific/Kosrae</option>
+        <option>Pacific/Kwajalein</option>
+        <option>Pacific/Majuro</option>
+        <option>Pacific/Marquesas</option>
+        <option>Pacific/Midway</option>
+        <option>Pacific/Nauru</option>
+        <option>Pacific/Niue</option>
+        <option>Pacific/Norfolk</option>
+        <option>Pacific/Noumea</option>
+        <option>Pacific/Pago_Pago</option>
+        <option>Pacific/Palau</option>
+        <option>Pacific/Pitcairn</option>
+        <option>Pacific/Pohnpei</option>
+        <option>Pacific/Ponape</option>
+        <option>Pacific/Port_Moresby</option>
+        <option>Pacific/Rarotonga</option>
+        <option>Pacific/Saipan</option>
+        <option>Pacific/Samoa</option>
+        <option>Pacific/Tahiti</option>
+        <option>Pacific/Tarawa</option>
+        <option>Pacific/Tongatapu</option>
+        <option>Pacific/Truk</option>
+        <option>Pacific/Wake</option>
+        <option>Pacific/Wallis</option>
+        <option>Pacific/Yap</option>
+        <option>UTC/GMT+0.5</option>
+        <option>UTC/GMT+1.5</option>
+        <option>UTC/GMT+10.5</option>
+        <option>UTC/GMT+10</option>
+        <option>UTC/GMT+11.5</option>
+        <option>UTC/GMT+11</option>
+        <option>UTC/GMT+12.5</option>
+        <option>UTC/GMT+12</option>
+        <option>UTC/GMT+13.5</option>
+        <option>UTC/GMT+13</option>
+        <option>UTC/GMT+14</option>
+        <option>UTC/GMT+1</option>
+        <option>UTC/GMT+2.5</option>
+        <option>UTC/GMT+2</option>
+        <option>UTC/GMT+3.5</option>
+        <option>UTC/GMT+3</option>
+        <option>UTC/GMT+4.5</option>
+        <option>UTC/GMT+4</option>
+        <option>UTC/GMT+5.5</option>
+        <option>UTC/GMT+5</option>
+        <option>UTC/GMT+6.5</option>
+        <option>UTC/GMT+6</option>
+        <option>UTC/GMT+7.5</option>
+        <option>UTC/GMT+7</option>
+        <option>UTC/GMT+8.5</option>
+        <option>UTC/GMT+8</option>
+        <option>UTC/GMT+9.5</option>
+        <option>UTC/GMT+9</option>
+        <option>UTC/GMT-0.5</option>
+        <option>UTC/GMT-1.5</option>
+        <option>UTC/GMT-10.5</option>
+        <option>UTC/GMT-10</option>
+        <option>UTC/GMT-11.5</option>
+        <option>UTC/GMT-11</option>
+        <option>UTC/GMT-12.5</option>
+        <option>UTC/GMT-12</option>
+        <option>UTC/GMT-13.5</option>
+        <option>UTC/GMT-13</option>
+        <option>UTC/GMT-14</option>
+        <option>UTC/GMT-1</option>
+        <option>UTC/GMT-2.5</option>
+        <option>UTC/GMT-2</option>
+        <option>UTC/GMT-3.5</option>
+        <option>UTC/GMT-3</option>
+        <option>UTC/GMT-4.5</option>
+        <option>UTC/GMT-4</option>
+        <option>UTC/GMT-5.5</option>
+        <option>UTC/GMT-5</option>
+        <option>UTC/GMT-6.5</option>
+        <option>UTC/GMT-6</option>
+        <option>UTC/GMT-7.5</option>
+        <option>UTC/GMT-7</option>
+        <option>UTC/GMT-8.5</option>
+        <option>UTC/GMT-8</option>
+        <option>UTC/GMT-9.5</option>
+        <option>UTC/GMT-9</option>
+        <option>UTC/GMT0</option>
+        <option>UTC</option>
+    </select>
+  </div>
+</script>
+
+<script type="text/html" data-help-name="octobus-json-extractor">
+  <p>A Node for OCTOBUS JSON Payload Extractor</p>
+</script>

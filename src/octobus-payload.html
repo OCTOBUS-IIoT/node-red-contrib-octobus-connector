@@ -1,0 +1,64 @@
+<script type="text/javascript">
+    RED.nodes.registerType('octobus-payload', {
+        category: 'Octobus',
+        color: '#C3B3C5',
+        defaults: {
+            measurementName: { value: "Default Val" },
+            dataType: { value: "decimal" },
+            assetId: { value: "" },
+            measurementId: { value: "" }
+        },
+        inputs: 1,
+        outputs: 1,
+        icon: "octobus_256.png",
+        label: function () {
+            return this.measurementName || "octobus-payload-formatter";
+        },
+        oneditprepare: function () {
+            $("#node-input-dataType").typedInput({
+                type: "DataType", types: [{
+                    value: "STRING",
+                    options: [
+                        { value: "string", label: "String" },
+                        { value: "boolean", label: "Boolean" },
+                        { value: "decimal", label: "Decimal" },
+                        { value: "integer", label: "Integer" },
+                    ]
+                }]
+            })
+        },
+        oneditsave: function () {
+
+        },
+        oneditcancel: function () {
+            this.editor.destroy();
+            delete this.editor;
+        },
+    });
+
+</script>
+
+<script type="text/html" data-template-name="octobus-payload">
+    <div class="form-row">
+        <label for="node-input-measurementName"><i class="fa fa-tag"></i>Measurement Name</label>
+        <input type="text" id="node-input-measurementName" placeholder="Measurement Name">
+    </div>
+    <div class="form-row">
+        <label for="node-input-dataType"><i class="fa fa-tag"></i>Data type</label>
+        <input type="text" id="node-input-dataType">
+    </div>
+    <div class="form-row">
+        <label for="node-input-assetId"><i class="fa fa-tag"></i>Asset Id</label>
+        <input type="text" id="node-input-assetId">
+    </div>
+    <div class="form-row">
+        <label for="node-input-measurementId"><i class="fa fa-tag"></i>Measurement Id</label>
+        <input type="text" id="node-input-measurementId">
+    </div>
+</script>
+<script type="text/javascript">
+
+</script>
+<script type="text/html" data-help-name="octobus-payload">
+    <p>A Node for octobus payload transformation</p>
+</script>

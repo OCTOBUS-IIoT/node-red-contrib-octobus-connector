@@ -1,0 +1,19 @@
+{
+    "name": "@octobus/node-red-contrib-octobus-connector",
+    "version": "2.0.0",
+    "description": "",
+    "node-red": {
+        "nodes": {
+            "octobus-json-extractor": "src/octobus-json-extractor.js",
+            "octobus-payload-formatter": "src/octobus-payload.js"
+        }
+    },
+    "keywords": [
+        "node-red",
+        "octobus"
+    ],
+    "dependencies": {
+        "flat": "^5.0.2",
+        "moment-timezone": "^0.5.37"
+    }
+}
