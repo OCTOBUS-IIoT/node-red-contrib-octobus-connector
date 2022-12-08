@@ -1,7 +1,7 @@
 {
     "name": "@octobus/node-red-contrib-octobus-connector",
-    "version": "2.0.0",
-    "description": "",
+    "version": "2.0.1",
+    "license": "GPL-3.0",
     "node-red": {
         "nodes": {
             "octobus-json-extractor": "src/octobus-json-extractor.js",
@@ -15,5 +15,9 @@
     "dependencies": {
         "flat": "^5.0.2",
         "moment-timezone": "^0.5.37"
+    },
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/OCTOBUS-IIoT/node-red-contrib-octobus-connector.git"
     }
 }
